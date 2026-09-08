@@ -235,7 +235,7 @@ const colorBlue = uniform(new THREE.Color(0x004bff));
   };
 
   gltfLoader.load(
-    "/modelo.glb",
+    new URL("../assets/modelo.glb", import.meta.url).href,
     (gltf) => {
       const model = gltf.scene;
 
@@ -261,7 +261,7 @@ const colorBlue = uniform(new THREE.Color(0x004bff));
     },
     undefined,
     (error) => {
-      console.error("Failed to load ./modelo.glb", error);
+      console.error("Failed to load modelo.glb", error);
     },
   );
 }
