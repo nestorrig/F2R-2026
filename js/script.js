@@ -204,11 +204,12 @@ class AppInspector extends Inspector {
   }
 }
 
-const createRenderer = () => {
+const createRenderer = (forceWebGL = false) => {
   const instance = new THREE.WebGPURenderer({
     canvas: canvas,
     antialias: true,
     alpha: false,
+    forceWebGL,
   });
   instance.shadowMap.enabled = true;
   instance.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -228,22 +229,40 @@ const error = (msg) => {
 
 let renderer;
 
+const startRenderer = async (forceWebGL) => {
+  const instance = createRenderer(forceWebGL);
+  await instance.init();
+  return instance;
+};
+
 const run = async () => {
-  if (!navigator.gpu) {
-    error("Your device does not support WebGPU.");
-    return;
+  const forceWebGL = !navigator.gpu;
+
+  try {
+    renderer = await startRenderer(forceWebGL);
+  } catch (err) {
+    if (forceWebGL) {
+      error(err?.message || "Couldn't initialize the renderer.");
+      return;
+    }
+
+    console.warn("WebGPU init failed, forcing WebGL2", err);
+    try {
+      renderer?.dispose();
+    } catch {}
+    renderer = await startRenderer(true);
   }
 
-  renderer = createRenderer();
-  await renderer.init();
-
-  if (!renderer.backend?.isWebGPUBackend) {
-    error(
-      "Couldn't initialize WebGPU. Make sure WebGPU is supported by your Browser!",
-    );
+  if (!forceWebGL && renderer.backend && !renderer.backend.isWebGPUBackend) {
+    console.warn("WebGPU backend unavailable, forcing WebGL2");
     try {
       renderer.dispose();
     } catch {}
+    renderer = await startRenderer(true);
+  }
+
+  if (!renderer.backend) {
+    error("Couldn't initialize the renderer.");
     renderer = undefined;
     return;
   }
