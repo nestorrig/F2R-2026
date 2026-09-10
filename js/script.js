@@ -218,41 +218,38 @@ const createRenderer = () => {
   return instance;
 };
 
-const showWebGPUUnavailable = () => {
-  document.querySelector(".webgpu-unavailable")?.removeAttribute("hidden");
+const error = (msg) => {
+  const box = document.querySelector(".webgpu-unavailable");
+  const text = box?.querySelector("p");
+  if (text) text.textContent = msg;
+  box?.removeAttribute("hidden");
   canvas.hidden = true;
 };
 
 let renderer;
 
-try {
+const run = async () => {
   if (!navigator.gpu) {
-    throw new Error("WebGPU not available");
+    error("Your device does not support WebGPU.");
+    return;
   }
 
   renderer = createRenderer();
-  await Promise.race([
-    renderer.init(),
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Renderer init timed out")), 4000);
-    }),
-  ]);
+  await renderer.init();
 
-  if (!renderer.backend) {
-    throw new Error("Renderer backend missing");
+  if (!renderer.backend?.isWebGPUBackend) {
+    error(
+      "Couldn't initialize WebGPU. Make sure WebGPU is supported by your Browser!",
+    );
+    try {
+      renderer.dispose();
+    } catch {}
+    renderer = undefined;
+    return;
   }
-} catch (error) {
-  console.warn("WebGPU is not available on this device", error);
-  try {
-    renderer?.dispose();
-  } catch {}
-  renderer = undefined;
-  showWebGPUUnavailable();
-  throw error;
-}
 
-renderer.inspector = new AppInspector();
-renderer.inspector.init();
+  renderer.inspector = new AppInspector();
+  renderer.inspector.init();
 
 const syncDebugUI = () => {
   renderer.inspector.domElement.style.display =
@@ -641,3 +638,9 @@ const tick = () => {
 };
 
 await renderer.setAnimationLoop(tick);
+};
+
+run().catch((err) => {
+  console.error(err);
+  error(err?.message || String(err));
+});

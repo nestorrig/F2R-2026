@@ -58,7 +58,7 @@ body {
 
 .webgpu-unavailable p {
   font-size: clamp(1rem, 4vw, 1.6rem);
-  max-width: 16ch;
+  max-width: 24ch;
 }
 
 main {
