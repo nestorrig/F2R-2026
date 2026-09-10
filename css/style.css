@@ -1,16 +1,152 @@
 * {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+.bungee-outline-regular {
+  font-family: "Bungee Outline", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.bungee-inline-regular {
+  font-family: "Bungee Inline", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.bungee-hairline-regular {
+  font-family: "Bungee Hairline", sans-serif;
+  font-weight: 400;
+  font-style: normal;
 }
 
 html,
 body {
   overflow: hidden;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  max-height: 100svh;
+  overscroll-behavior: none;
+  touch-action: none;
+  background-color: #004bff;
 }
 
 .threejs {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
+  width: 100%;
+  height: 100svh;
+  z-index: 0;
   outline: none;
+  touch-action: none;
+}
+
+main {
+  background-color: #004bff00;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100svh;
+  z-index: 1;
+  pointer-events: none;
+}
+
+main h1 {
+  position: absolute;
+  top: clamp(16px, 2vw, 32px);
+  left: clamp(16px, 2vw, 32px);
+  color: #fff;
+
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 2vw, 8px);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+main h1 a {
+  color: inherit;
+  text-decoration: none;
+  font-size: clamp(4.2rem, 18vw, 10rem);
+  max-width: 600px;
+  line-height: 80%;
+  pointer-events: auto;
+}
+
+main h1>span {
+  font-size: clamp(1.2rem, 5vw, 2.4rem);
+}
+
+main footer {
+  position: absolute;
+  bottom: clamp(16px, 2vw, 32px);
+  right: clamp(16px, 2vw, 32px);
+  color: #fff;
+  pointer-events: auto;
+}
+
+main footer p {
+  font-size: clamp(1rem, 5vw, 1.2rem);
+  padding-inline: 8px;
+  text-align: end;
+  margin-bottom: clamp(2px, 2vw, 16px);
+}
+
+main footer .socials {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: clamp(8px, 2vw, 16px);
+}
+
+main footer .socials a {
+  width: clamp(40px, 5vw, 48px);
+  height: clamp(40px, 5vw, 48px);
+  padding: clamp(4px, 5vw, 8px);
+}
+
+main footer .socials a svg {
+  width: 100%;
+  height: 100%;
+}
+
+main .code {
+  pointer-events: auto;
+
+  position: absolute;
+  bottom: clamp(16px, 2vw, 32px);
+  left: clamp(16px, 2vw, 32px);
+
+  padding: clamp(6px, 5vw, 8px);
+  margin-bottom: clamp(6px, 5vw, 8px);
+  width: clamp(36px, 5vw, 48px);
+  height: clamp(36px, 5vw, 48px);
+
+  color: #fff;
+  border-radius: 50%;
+  border: 1px solid #fff;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+main .code svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (min-width: 768px) {
+  main h1 a span:first-child {
+    font-size: clamp(13.8rem, 20vw, 13.7rem);
+    line-height: 80%;
+    /* espacio entre letras */
+    letter-spacing: -0.05em;
+  }
 }

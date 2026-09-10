@@ -1,5 +1,4 @@
 import * as THREE from "three/webgpu";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   checker,
   uv,
@@ -25,7 +24,7 @@ import {
 } from "three/tsl";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import GUI from "three/addons/libs/lil-gui.module.min.js";
+import { Inspector } from "three/addons/inspector/Inspector.js";
 
 /**
  * Base
@@ -48,19 +47,19 @@ const sizes = {
   height: window.innerHeight,
 };
 
-window.addEventListener("resize", () => {
-  // Update sizes
+window.addEventListener("resize", onResize);
+window.visualViewport?.addEventListener("resize", onResize);
+
+function onResize() {
   sizes.width = window.innerWidth;
   sizes.height = window.innerHeight;
 
-  // Update camera
   camera.aspect = sizes.width / sizes.height;
   camera.updateProjectionMatrix();
 
-  // Update renderer
   renderer.setSize(sizes.width, sizes.height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-});
+}
 
 /**
  * Camera
@@ -75,33 +74,105 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(-3.156, 0.606, 2.878);
 scene.add(camera);
 
-// Controls
-const controls = new OrbitControls(camera, canvas);
-controls.target.set(-0.147, 0.86, -0.098);
-controls.enableDamping = true;
-controls.minDistance = 1;
-controls.maxDistance = 7;
-controls.maxPolarAngle = Math.PI / 2;
-const logControls = () => {
-  if (window.location.hash !== "#debug") return;
+const lookAtTarget = new THREE.Vector3(-0.147, 0.86, -0.098);
+camera.lookAt(lookAtTarget);
 
-  const { x, y, z } = camera.position;
-  const { x: tx, y: ty, z: tz } = controls.target;
-  const round = (value) => Number(value.toFixed(3));
+const cameraBase = camera.position.clone();
+const cameraGoal = new THREE.Vector3();
+const cameraSpherical = new THREE.Spherical().setFromVector3(
+  cameraBase.clone().sub(lookAtTarget),
+);
+const cameraPhi = cameraSpherical.phi;
+const cameraTheta = cameraSpherical.theta;
+const cameraRadius = cameraSpherical.radius;
+const mobileQuery = window.matchMedia("(max-width: 768px)");
+const getCameraRadius = () => cameraRadius * (mobileQuery.matches ? 1.5 : 1);
 
-  console.log(`camera.position.set(${round(x)}, ${round(y)}, ${round(z)});
-controls.target.set(${round(tx)}, ${round(ty)}, ${round(tz)});
-controls.minDistance = ${round(controls.minDistance)};
-controls.maxDistance = ${round(controls.maxDistance)};
-// current orbit: distance ${round(camera.position.distanceTo(controls.target))} | polar ${round(controls.getPolarAngle())} | azimuth ${round(controls.getAzimuthalAngle())}`);
+cameraSpherical.radius = getCameraRadius();
+camera.position.copy(
+  cameraGoal.setFromSpherical(cameraSpherical).add(lookAtTarget),
+);
+camera.lookAt(lookAtTarget);
+
+const pointer = new THREE.Vector2();
+const gyro = new THREE.Vector2();
+const clock = new THREE.Clock();
+
+const setPointerFromEvent = (event) => {
+  pointer.x = (event.clientX / sizes.width) * 2 - 1;
+  pointer.y = -(event.clientY / sizes.height) * 2 + 1;
 };
 
-let controlsLogTimer;
-controls.addEventListener("change", () => {
-  clearTimeout(controlsLogTimer);
-  controlsLogTimer = setTimeout(logControls, 100);
+window.addEventListener("pointermove", setPointerFromEvent);
+window.addEventListener("pointerup", (event) => {
+  if (event.pointerType !== "mouse") pointer.set(0, 0);
 });
-controls.addEventListener("end", logControls);
+window.addEventListener("pointercancel", () => {
+  pointer.set(0, 0);
+});
+
+const onDeviceOrientation = (event) => {
+  gyro.x = THREE.MathUtils.clamp((event.gamma ?? 0) / 35, -1, 1);
+  gyro.y = THREE.MathUtils.clamp(((event.beta ?? 45) - 45) / 35, -1, 1);
+};
+
+const enableGyro = async () => {
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== "granted") return;
+    }
+    window.addEventListener("deviceorientation", onDeviceOrientation);
+  } catch {}
+};
+
+window.addEventListener("pointerdown", enableGyro, { once: true });
+
+const updateCameraRig = (delta) => {
+  const lookX = THREE.MathUtils.clamp(pointer.x + gyro.x, -1, 1);
+  const lookY = THREE.MathUtils.clamp(pointer.y + gyro.y, -1, 1);
+
+  cameraSpherical.theta = cameraTheta + lookX * (Math.PI / 4);
+  cameraSpherical.phi = THREE.MathUtils.clamp(
+    cameraPhi - lookY * (Math.PI / 12),
+    0.2,
+    Math.max(cameraPhi, Math.PI / 1),
+  );
+  cameraSpherical.radius = getCameraRadius();
+
+  cameraGoal.setFromSpherical(cameraSpherical).add(lookAtTarget);
+
+  camera.position.x = THREE.MathUtils.damp(
+    camera.position.x,
+    cameraGoal.x,
+    1,
+    delta,
+  );
+  camera.position.y = THREE.MathUtils.damp(
+    camera.position.y,
+    cameraGoal.y,
+    1,
+    delta,
+  );
+  camera.position.z = THREE.MathUtils.damp(
+    camera.position.z,
+    cameraGoal.z,
+    1,
+    delta,
+  );
+
+  camera.lookAt(lookAtTarget);
+};
+
+const debug = {
+  background: "#004bff",
+  floor: "#004bff",
+  shaderBlue: "#004bff",
+  shaderWhite: "#ffffff",
+  directionalLight: "#ffffff",
+  ambientLight: "#ffffff",
+  spotLight: "#ffffff",
+};
 
 /**
  * Renderer
@@ -129,17 +200,25 @@ const createRenderer = (forceWebGL) => {
   const instance = new THREE.WebGPURenderer({
     canvas: canvas,
     antialias: true,
+    alpha: false,
     forceWebGL,
   });
   instance.shadowMap.enabled = true;
   instance.shadowMap.type = THREE.PCFSoftShadowMap;
   instance.setSize(sizes.width, sizes.height);
   instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  instance.setClearColor(0xffffff);
+  instance.setClearColor(0x004bff);
+  instance.inspector = new Inspector();
   return instance;
 };
 
 let renderer = createRenderer(!(await canUseWebGPU()));
+const syncDebugUI = () => {
+  renderer.inspector.domElement.style.display =
+    window.location.hash === "#debug" ? "" : "none";
+};
+syncDebugUI();
+window.addEventListener("hashchange", syncDebugUI);
 
 try {
   await renderer.init();
@@ -157,7 +236,7 @@ try {
  */
 const floorMaterial = new THREE.MeshStandardNodeMaterial({
   transparent: true,
-  color: 0xffffff,
+  color: new THREE.Color(debug.floor),
 });
 {
   const geometry = new THREE.PlaneGeometry(10, 10, 10, 10);
@@ -273,6 +352,8 @@ const colorBlue = uniform(new THREE.Color(0x004bff));
   gltfLoader.load(
     new URL("../assets/modelo.glb", import.meta.url).href,
     (gltf) => {
+      console.log(gltf);
+
       const model = gltf.scene;
 
       model.position.y = 0;
@@ -327,10 +408,10 @@ scene.add(ambientLight);
 
 const spotLight = new THREE.SpotLight(
   0xffffff,
-  28,
-  14,
+  80,
+  30,
   0.5235987755982988,
-  0.35,
+  1,
   2,
 );
 spotLight.position.set(1.8, 5.45, 1.64);
@@ -356,12 +437,21 @@ scenePass.setMRT(
   }),
 );
 
-const bloomPass = bloom(scenePass.getTextureNode("emissive"), 6, 1, 0.8);
-const bloomedColor = scenePass.getTextureNode("output").add(bloomPass);
+const sceneColor = scenePass.getTextureNode("output").toInspector("Color");
+const emissivePass = scenePass
+  .getTextureNode("emissive")
+  .toInspector("Emissive");
+const bloomPass = bloom(emissivePass, 6, 1, 0.8).toInspector("Bloom");
+const bloomedColor = sceneColor.add(bloomPass).toInspector("Bloomed");
 
-const htRadius = uniform(8);
-const htBlending = uniform(1);
-const htEnabled = uniform(1);
+const htRadius = uniform(14);
+const htBlending = uniform(0.7);
+const htGain = uniform(0.72);
+const htSoftness = uniform(0.07);
+const htAngleR = uniform(Math.PI / 12);
+const htAngleG = uniform((Math.PI / 12) * 2);
+const htAngleB = uniform((Math.PI / 12) * 3);
+const htView = uniform(0);
 
 const halftoneChannel = (channel, angle) => {
   const s = angle.sin();
@@ -372,19 +462,43 @@ const halftoneChannel = (channel, angle) => {
     s.mul(coord.x).add(c.mul(coord.y)),
   );
   const dist = rotated.fract().sub(0.5).length();
-  return channel.mul(0.72).sub(dist).div(0.07).clamp();
+  return channel.mul(htGain).sub(dist).div(htSoftness).clamp();
 };
 
 const halftoneNode = Fn(() => {
   const col = bloomedColor;
-  const patterned = vec3(
-    halftoneChannel(col.r, float(Math.PI / 12)),
-    halftoneChannel(col.g, float((Math.PI / 12) * 2)),
-    halftoneChannel(col.b, float((Math.PI / 12) * 3)),
-  );
-  const mixed = mix(col.rgb, patterned, htBlending);
-  return htEnabled.greaterThan(0.5).select(vec4(mixed, col.a), col);
-})();
+  const r = halftoneChannel(col.r, htAngleR).toVar("htR");
+  const g = halftoneChannel(col.g, htAngleG).toVar("htG");
+  const b = halftoneChannel(col.b, htAngleB).toVar("htB");
+  const patterned = vec3(r, g, b).toVar("htPatterned");
+  const mixed = mix(col.rgb, patterned, htBlending).toVar("htMixed");
+
+  const outAlpha = sceneColor.a;
+  const mixedOut = vec4(mixed, outAlpha);
+  const patternedOut = vec4(patterned, outAlpha);
+  const rOut = vec4(vec3(r), outAlpha);
+  const gOut = vec4(vec3(g), outAlpha);
+  const bOut = vec4(vec3(b), outAlpha);
+
+  return htView
+    .equal(1)
+    .select(
+      col,
+      htView
+        .equal(2)
+        .select(
+          patternedOut,
+          htView
+            .equal(3)
+            .select(
+              rOut,
+              htView
+                .equal(4)
+                .select(gOut, htView.equal(5).select(bOut, mixedOut)),
+            ),
+        ),
+    );
+})().toInspector("Halftone");
 
 const renderPipeline = new THREE.RenderPipeline(renderer);
 renderPipeline.outputNode = halftoneNode;
@@ -392,29 +506,12 @@ renderPipeline.outputNode = halftoneNode;
 /**
  * Debug
  */
-const debug = {
-  background: "#ffffff",
-  floor: "#ffffff",
-  shaderBlue: "#004bff",
-  shaderWhite: "#ffffff",
-  directionalLight: "#ffffff",
-  ambientLight: "#ffffff",
-  spotLight: "#ffffff",
-};
 
-const gui = new GUI();
-gui.domElement.style.width = "200px";
-const syncDebugUI = () => {
-  if (window.location.hash === "#debug") {
-    gui.show();
-  } else {
-    gui.hide();
-  }
-};
-syncDebugUI();
-window.addEventListener("hashchange", syncDebugUI);
+const gui = renderer.inspector.createParameters("Parameters");
+
 gui.addColor(debug, "background").onChange((value) => {
-  renderer.setClearColor(value);
+  document.body.style.backgroundColor = value;
+  document.querySelector("main").style.backgroundColor = value;
 });
 gui.addColor(debug, "floor").onChange((value) => {
   floorMaterial.color.set(value);
@@ -481,22 +578,32 @@ bloomFolder.add(bloomPass.strength, "value", 0, 4, 0.01).name("strength");
 bloomFolder.add(bloomPass.radius, "value", 0, 1, 0.01).name("radius");
 bloomFolder.add(bloomPass.threshold, "value", 0, 1, 0.01).name("threshold");
 
-const htDebug = { enabled: true };
+const htViews = {
+  mixed: 0,
+  original: 1,
+  patterned: 2,
+  R: 3,
+  G: 4,
+  B: 5,
+};
+const htDebug = { view: "mixed" };
 const halftoneFolder = gui.addFolder("Halftone");
-halftoneFolder.add(htDebug, "enabled").onChange((value) => {
-  htEnabled.value = value ? 1 : 0;
+halftoneFolder.add(htDebug, "view", Object.keys(htViews)).onChange((value) => {
+  htView.value = htViews[value];
 });
-halftoneFolder.add(htRadius, "value", 1, 16, 0.1).name("radius");
+halftoneFolder.add(htRadius, "value", 1, 32, 0.1).name("radius");
 halftoneFolder.add(htBlending, "value", 0, 1, 0.01).name("blending");
+halftoneFolder.add(htGain, "value", 0, 2, 0.01).name("gain");
+halftoneFolder.add(htSoftness, "value", 0.01, 0.5, 0.001).name("softness");
+halftoneFolder.add(htAngleR, "value", 0, Math.PI, 0.01).name("angle R");
+halftoneFolder.add(htAngleG, "value", 0, Math.PI, 0.01).name("angle G");
+halftoneFolder.add(htAngleB, "value", 0, Math.PI, 0.01).name("angle B");
 
 /**
  * Animate
  */
 const tick = () => {
-  // Update controls
-  controls.update();
-
-  // Render
+  updateCameraRig(clock.getDelta());
   renderPipeline.render();
 };
 
