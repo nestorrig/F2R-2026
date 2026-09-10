@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   checker,
   uv,
@@ -59,6 +60,7 @@ function onResize() {
 
   renderer.setSize(sizes.width, sizes.height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  syncCameraMode();
 }
 
 /**
@@ -88,11 +90,46 @@ const cameraRadius = cameraSpherical.radius;
 const mobileQuery = window.matchMedia("(max-width: 768px)");
 const getCameraRadius = () => cameraRadius * (mobileQuery.matches ? 1.5 : 1);
 
-cameraSpherical.radius = getCameraRadius();
-camera.position.copy(
-  cameraGoal.setFromSpherical(cameraSpherical).add(lookAtTarget),
-);
-camera.lookAt(lookAtTarget);
+let controls = null;
+
+const applyCameraDistance = () => {
+  cameraSpherical.radius = getCameraRadius();
+  camera.position.copy(
+    cameraGoal.setFromSpherical(cameraSpherical).add(lookAtTarget),
+  );
+  camera.lookAt(lookAtTarget);
+};
+
+const syncCameraMode = () => {
+  if (mobileQuery.matches) {
+    if (!controls) {
+      applyCameraDistance();
+      controls = new OrbitControls(camera, canvas);
+      controls.enableDamping = false;
+      controls.enablePan = false;
+      controls.target.copy(lookAtTarget);
+      controls.maxPolarAngle = Math.PI / 2;
+      controls.update();
+      const azimuth = controls.getAzimuthalAngle();
+      controls.minAzimuthAngle = azimuth - Math.PI / 4;
+      controls.maxAzimuthAngle = azimuth + Math.PI / 1.5;
+    }
+
+    const radius = getCameraRadius();
+    controls.minDistance = radius * 0.8;
+    controls.maxDistance = radius * 1.5;
+    controls.enabled = true;
+    return;
+  }
+
+  if (controls) {
+    controls.enabled = false;
+  }
+};
+
+applyCameraDistance();
+syncCameraMode();
+mobileQuery.addEventListener("change", syncCameraMode);
 
 const pointer = new THREE.Vector2();
 const gyro = new THREE.Vector2();
@@ -126,7 +163,13 @@ const enableGyro = async () => {
   } catch {}
 };
 
-window.addEventListener("pointerdown", enableGyro, { once: true });
+window.addEventListener(
+  "pointerdown",
+  () => {
+    if (!mobileQuery.matches) enableGyro();
+  },
+  { once: true },
+);
 
 const updateCameraRig = (delta) => {
   const lookX = THREE.MathUtils.clamp(pointer.x + gyro.x, -1, 1);
@@ -180,14 +223,22 @@ const debug = {
 const canUseWebGPU = async () => {
   if (!navigator.gpu) return false;
 
+  const requestAdapter = async (options) => {
+    try {
+      return await navigator.gpu.requestAdapter(options);
+    } catch {
+      return null;
+    }
+  };
+
   try {
-    const adapterPromise = navigator.gpu
-      .requestAdapter({ featureLevel: "compatibility" })
-      .catch(() => null);
+    const adapterPromise = requestAdapter().then(
+      (adapter) => adapter ?? requestAdapter({ featureLevel: "compatibility" }),
+    );
 
     const adapter = await Promise.race([
       adapterPromise,
-      new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
+      new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
     ]);
 
     return adapter != null;
@@ -195,6 +246,19 @@ const canUseWebGPU = async () => {
     return false;
   }
 };
+
+class AppInspector extends Inspector {
+  resolveConsole(type, message, stackTrace = null) {
+    if (
+      type === "error" &&
+      String(message).includes("Timestamp Queries not available")
+    ) {
+      return;
+    }
+
+    super.resolveConsole(type, message, stackTrace);
+  }
+}
 
 const createRenderer = (forceWebGL) => {
   const instance = new THREE.WebGPURenderer({
@@ -208,17 +272,11 @@ const createRenderer = (forceWebGL) => {
   instance.setSize(sizes.width, sizes.height);
   instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   instance.setClearColor(0x004bff);
-  instance.inspector = new Inspector();
+  instance.inspector = new AppInspector();
   return instance;
 };
 
 let renderer = createRenderer(!(await canUseWebGPU()));
-const syncDebugUI = () => {
-  renderer.inspector.domElement.style.display =
-    window.location.hash === "#debug" ? "" : "none";
-};
-syncDebugUI();
-window.addEventListener("hashchange", syncDebugUI);
 
 try {
   await renderer.init();
@@ -230,6 +288,13 @@ try {
   renderer = createRenderer(true);
   await renderer.init();
 }
+
+const syncDebugUI = () => {
+  renderer.inspector.domElement.style.display =
+    window.location.hash === "#debug" ? "" : "none";
+};
+syncDebugUI();
+window.addEventListener("hashchange", syncDebugUI);
 
 /**
  * Floor
@@ -603,7 +668,11 @@ halftoneFolder.add(htAngleB, "value", 0, Math.PI, 0.01).name("angle B");
  * Animate
  */
 const tick = () => {
-  updateCameraRig(clock.getDelta());
+  if (mobileQuery.matches) {
+    controls?.update();
+  } else {
+    updateCameraRig(clock.getDelta());
+  }
   renderPipeline.render();
 };
 
