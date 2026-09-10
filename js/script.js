@@ -52,6 +52,8 @@ window.addEventListener("resize", onResize);
 window.visualViewport?.addEventListener("resize", onResize);
 
 function onResize() {
+  if (!renderer) return;
+
   sizes.width = window.innerWidth;
   sizes.height = window.innerHeight;
 
@@ -202,12 +204,11 @@ class AppInspector extends Inspector {
   }
 }
 
-const createRenderer = (forceWebGL) => {
+const createRenderer = () => {
   const instance = new THREE.WebGPURenderer({
     canvas: canvas,
     antialias: true,
     alpha: false,
-    forceWebGL,
   });
   instance.shadowMap.enabled = true;
   instance.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -217,28 +218,37 @@ const createRenderer = (forceWebGL) => {
   return instance;
 };
 
-const initRenderer = async (instance, ms = 4000) => {
-  const timeout = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("Renderer init timed out")), ms);
-  });
-  await Promise.race([instance.init(), timeout]);
-
-  if (!instance.backend) {
-    throw new Error("Renderer backend missing");
-  }
+const showWebGPUUnavailable = () => {
+  document.querySelector(".webgpu-unavailable")?.removeAttribute("hidden");
+  canvas.hidden = true;
 };
 
-let renderer = createRenderer(!navigator.gpu);
+let renderer;
 
 try {
-  await initRenderer(renderer);
+  if (!navigator.gpu) {
+    throw new Error("WebGPU not available");
+  }
+
+  renderer = createRenderer();
+  await Promise.race([
+    renderer.init(),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Renderer init timed out")), 4000);
+    }),
+  ]);
+
+  if (!renderer.backend) {
+    throw new Error("Renderer backend missing");
+  }
 } catch (error) {
-  console.warn("WebGPU init failed, falling back to WebGL2", error);
+  console.warn("WebGPU is not available on this device", error);
   try {
-    renderer.dispose();
+    renderer?.dispose();
   } catch {}
-  renderer = createRenderer(true);
-  await renderer.init();
+  renderer = undefined;
+  showWebGPUUnavailable();
+  throw error;
 }
 
 renderer.inspector = new AppInspector();

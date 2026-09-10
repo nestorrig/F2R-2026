@@ -44,6 +44,23 @@ body {
   touch-action: none;
 }
 
+.webgpu-unavailable:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #fff;
+  text-align: center;
+  padding: clamp(16px, 4vw, 32px);
+}
+
+.webgpu-unavailable p {
+  font-size: clamp(1rem, 4vw, 1.6rem);
+  max-width: 16ch;
+}
+
 main {
   background-color: #004bff00;
   position: fixed;

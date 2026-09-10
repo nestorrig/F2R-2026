@@ -15,7 +15,7 @@ On desktop the camera eases around the model with the pointer. On mobile it uses
 ## Stack
 
 - **Cinema 4D** — model (`assets/modelo.glb`)
-- **Three.js r185** — `WebGPURenderer`, with a WebGL2 fallback
+- **Three.js r185** — `WebGPURenderer` (shows a message if WebGPU is missing)
 - **TSL** — materials and the postprocessing graph
 - **Bloom + halftone** — print-like finish over the emissive visor
 
