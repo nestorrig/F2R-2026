@@ -106,15 +106,51 @@ controls.addEventListener("end", logControls);
 /**
  * Renderer
  */
-const renderer = new THREE.WebGPURenderer({
-  canvas: canvas,
-  antialias: true,
-});
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setSize(sizes.width, sizes.height);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0xffffff);
+const canUseWebGPU = async () => {
+  if (!navigator.gpu) return false;
+
+  try {
+    const adapterPromise = navigator.gpu
+      .requestAdapter({ featureLevel: "compatibility" })
+      .catch(() => null);
+
+    const adapter = await Promise.race([
+      adapterPromise,
+      new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+
+    return adapter != null;
+  } catch {
+    return false;
+  }
+};
+
+const createRenderer = (forceWebGL) => {
+  const instance = new THREE.WebGPURenderer({
+    canvas: canvas,
+    antialias: true,
+    forceWebGL,
+  });
+  instance.shadowMap.enabled = true;
+  instance.shadowMap.type = THREE.PCFSoftShadowMap;
+  instance.setSize(sizes.width, sizes.height);
+  instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  instance.setClearColor(0xffffff);
+  return instance;
+};
+
+let renderer = createRenderer(!(await canUseWebGPU()));
+
+try {
+  await renderer.init();
+} catch (error) {
+  console.warn("WebGPU init failed, falling back to WebGL2", error);
+  try {
+    renderer.dispose();
+  } catch {}
+  renderer = createRenderer(true);
+  await renderer.init();
+}
 
 /**
  * Floor
@@ -464,4 +500,4 @@ const tick = () => {
   renderPipeline.render();
 };
 
-renderer.setAnimationLoop(tick);
+await renderer.setAnimationLoop(tick);
