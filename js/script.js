@@ -132,48 +132,17 @@ syncCameraMode();
 mobileQuery.addEventListener("change", syncCameraMode);
 
 const pointer = new THREE.Vector2();
-const gyro = new THREE.Vector2();
 const clock = new THREE.Clock();
 
-const setPointerFromEvent = (event) => {
+window.addEventListener("pointermove", (event) => {
+  if (mobileQuery.matches) return;
   pointer.x = (event.clientX / sizes.width) * 2 - 1;
   pointer.y = -(event.clientY / sizes.height) * 2 + 1;
-};
-
-window.addEventListener("pointermove", setPointerFromEvent);
-window.addEventListener("pointerup", (event) => {
-  if (event.pointerType !== "mouse") pointer.set(0, 0);
 });
-window.addEventListener("pointercancel", () => {
-  pointer.set(0, 0);
-});
-
-const onDeviceOrientation = (event) => {
-  gyro.x = THREE.MathUtils.clamp((event.gamma ?? 0) / 35, -1, 1);
-  gyro.y = THREE.MathUtils.clamp(((event.beta ?? 45) - 45) / 35, -1, 1);
-};
-
-const enableGyro = async () => {
-  try {
-    if (typeof DeviceOrientationEvent.requestPermission === "function") {
-      const permission = await DeviceOrientationEvent.requestPermission();
-      if (permission !== "granted") return;
-    }
-    window.addEventListener("deviceorientation", onDeviceOrientation);
-  } catch {}
-};
-
-window.addEventListener(
-  "pointerdown",
-  () => {
-    if (!mobileQuery.matches) enableGyro();
-  },
-  { once: true },
-);
 
 const updateCameraRig = (delta) => {
-  const lookX = THREE.MathUtils.clamp(pointer.x + gyro.x, -1, 1);
-  const lookY = THREE.MathUtils.clamp(pointer.y + gyro.y, -1, 1);
+  const lookX = THREE.MathUtils.clamp(pointer.x, -1, 1);
+  const lookY = THREE.MathUtils.clamp(pointer.y, -1, 1);
 
   cameraSpherical.theta = cameraTheta + lookX * (Math.PI / 4);
   cameraSpherical.phi = THREE.MathUtils.clamp(
@@ -220,33 +189,6 @@ const debug = {
 /**
  * Renderer
  */
-const canUseWebGPU = async () => {
-  if (!navigator.gpu) return false;
-
-  const requestAdapter = async (options) => {
-    try {
-      return await navigator.gpu.requestAdapter(options);
-    } catch {
-      return null;
-    }
-  };
-
-  try {
-    const adapterPromise = requestAdapter().then(
-      (adapter) => adapter ?? requestAdapter({ featureLevel: "compatibility" }),
-    );
-
-    const adapter = await Promise.race([
-      adapterPromise,
-      new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
-    ]);
-
-    return adapter != null;
-  } catch {
-    return false;
-  }
-};
-
 class AppInspector extends Inspector {
   resolveConsole(type, message, stackTrace = null) {
     if (
@@ -272,14 +214,24 @@ const createRenderer = (forceWebGL) => {
   instance.setSize(sizes.width, sizes.height);
   instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   instance.setClearColor(0x004bff);
-  instance.inspector = new AppInspector();
   return instance;
 };
 
-let renderer = createRenderer(!(await canUseWebGPU()));
+const initRenderer = async (instance, ms = 4000) => {
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("Renderer init timed out")), ms);
+  });
+  await Promise.race([instance.init(), timeout]);
+
+  if (!instance.backend) {
+    throw new Error("Renderer backend missing");
+  }
+};
+
+let renderer = createRenderer(!navigator.gpu);
 
 try {
-  await renderer.init();
+  await initRenderer(renderer);
 } catch (error) {
   console.warn("WebGPU init failed, falling back to WebGL2", error);
   try {
@@ -288,6 +240,9 @@ try {
   renderer = createRenderer(true);
   await renderer.init();
 }
+
+renderer.inspector = new AppInspector();
+renderer.inspector.init();
 
 const syncDebugUI = () => {
   renderer.inspector.domElement.style.display =
@@ -575,8 +530,7 @@ renderPipeline.outputNode = halftoneNode;
 const gui = renderer.inspector.createParameters("Parameters");
 
 gui.addColor(debug, "background").onChange((value) => {
-  document.body.style.backgroundColor = value;
-  document.querySelector("main").style.backgroundColor = value;
+  renderer.setClearColor(value);
 });
 gui.addColor(debug, "floor").onChange((value) => {
   floorMaterial.color.set(value);
